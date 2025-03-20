@@ -38,7 +38,7 @@ def get_stock_data():
         symbol=row["symbol"].strip()
         #st.write(f"Processing {symbol}...")
         
-        stock = yfo.TickerInfo(symbol)
+        stock = yfo.TickerInfo(symbol, row["purchased_date"], row["quantity"], row["avg_cost_basis"], row["country"])
         
         quantity=row["quantity"]
         avg_cost_basis=row["avg_cost_basis"]
@@ -66,6 +66,7 @@ def get_stock_data():
         stocks_df.at[index,"recommendations"]=stock.ticker.recommendations
         stocks_df.at[index,"chart_df"]=stock.get_historical_data_with_duration(period='2y')
         stocks_df.at[index,"period_perf_df"]=stock.get_last_2years_performance(quantity, avg_cost_basis, row["purchased_date"])
+        stocks_df.loc[index,"purchased_date"]=row["purchased_date"]
         stocks_df.loc[index,"yr1_min_price"]=round(stock.yr1_min_price, 2)
         stocks_df.loc[index,"yr1_max_price"]=round(stock.yr1_max_price,2)
 
@@ -76,7 +77,7 @@ def get_stock_data():
         stocks_df.loc[index,"hold_count"]=recommendations.get("hold")
         stocks_df.loc[index,"sell_count"]=recommendations.get("sell")+recommendations.get("strongSell")
 
-        #st.write(stock.get_recommendations_by_dictionary())
+        #st.write(stock.get_recommendations_by_dictionary())        
 
     return stocks_df.query("country=='USA'"), stocks_df.query("country=='IND'")
 
@@ -104,12 +105,30 @@ def gain_loss_format(value):
     else:
         return f"{value}"
 
-def green_or_red_background(value, value1):
-    if value > 0:
-        return f"""<span class="button-green">{value1:,.0f}</span>"""
+def green_or_red_background(value, compare_value):
+    if compare_value > 0:
+        return f"""<span class="button-green">{value:,.0f}</span>"""
     else:
-        return f"""<span class="button-red">{value1:,.0f}</span>"""
-    
+        return f"""<span class="button-red">{value:,.0f}</span>"""
+
+def green_or_red_background_dec(value, compare_value):
+    if compare_value > 0:
+        return f"""<span class="button-green">{value:,.2f}</span>"""
+    else:
+        return f"""<span class="button-red">{value:,.2f}</span>"""
+
+def green_or_red_background_dec_gl_last_val(value, compare_value):
+    if compare_value > 0:
+        return f"""<span class="button-green">(+{value:,.2f})</span>"""
+    else:
+        return f"""<span class="button-red">({value:,.2f})</span>"""
+
+def green_or_red_background_dec_gl_current_val(value, compare_value):
+    if compare_value > 0:
+        return f"""<span class="button-green">+{value:,.2f}</span>"""
+    else:
+        return f"""<span class="button-red">{value:,.2f}</span>"""
+
 st.set_page_config(
     page_title="Stock Analysis",
     page_icon="🏂",
@@ -241,6 +260,15 @@ body {background-color: #000000;}
     border-style: none;
 }
 
+.stExpander {
+    background-colorx: #0f62fe; /* Change to your desired color */
+    color: white;
+}
+
+.st-emotion-cache-10iox0m {
+    gap: 0.3rem;
+}
+
 .stProgress > div > div > div > div {
     background-color: green;
 }
@@ -261,7 +289,8 @@ body {background-color: #000000;}
     border: 1px solid rgba(49, 51, 63, 0.2);
     border-radius: 15px;
     backgroundx: linear-gradient(180deg, #0d47a1, #1976d2);
-    background-image: linear-gradient(to bottom right, #00C0FF, #4218B8);
+    background-color: black;
+    background-imagex: linear-gradient(to bottom right, #00C0FF, #4218B8);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
     padding: calc(-11px + 1rem);
     }
@@ -321,7 +350,7 @@ if st.sidebar.button("Refresh Data"):
 
 usa_stocks_df, ind_stocks_df = get_stock_data()
 
-sort_columns = st.sidebar.multiselect('Select columns to sort', usa_stocks_df.columns)
+sort_columns = st.sidebar.multiselect('Select columns to sort', usa_stocks_df.columns, ['total_gain_loss_per'])
 sort_orders = []
 
 # Select sort order for each selected column
@@ -337,6 +366,12 @@ if sort_columns:
 #weekly_data = yf.download("AAPL", start="2024-02-16", end="2025-02-17", interval="1wk")
 #st.dataframe(weekly_data)
 
+def highlight_column(row):
+    if row["current_cost"] > row["actual_cost"]:
+        return [""] * 6 + ["background-color: green; color: white"]
+    else:
+        return [""] * 6 + ["background-color: red; color: white"]
+
 def tab_operation(country_tab, country_stocks_df):
     with country_tab:
         #st.dataframe(country_stocks_df)
@@ -346,30 +381,35 @@ def tab_operation(country_tab, country_stocks_df):
                             <div class="top-section">                                                        
                                 <div class="bottom-section" style="width:100%;">
                                     <div style="width:40%;float: left;font-size: 16px;font-weight: 600;display: inline">
-                                        <span>{stock['symbol']}</span>
+                                        <span>{stock['symbol'].replace(".NS","")}</span>
                                         <span>
                                             <span class="circle-green">{stock['buy_count']}</span>
                                             <span class="circle-orange">{stock['hold_count']}</span>
                                             <span class="circle-red">{stock['sell_count']}</span>
                                         </span>
                                         <br>
-                                        <span>""" +gain_loss_format(round(stock['last_price'],2))+f"""</span> <span>({stock['last_price_change']:,.2f})</span><br>
-                                        G/L: {stock['today_gain_loss']:,.0f}
-                                    </div>
+                                        <span>""" +
+                                        green_or_red_background_dec(stock['last_price'], stock['last_price_change'])+
+                                        f"""</span> <span>"""+
+                                        green_or_red_background_dec_gl_last_val(stock['last_price_change'], stock['last_price_change'])
+                                        +"""</span><br>
+                                        G/L: """+
+                                        green_or_red_background_dec_gl_current_val(stock['today_gain_loss'], stock['last_price_change'])
+                                    +f"""</div>
                                     <div style="width:30%;float:left;text-align: right; display: inline">
                                         CB: {stock['avg_cost_basis']:,.2f}<br>                                        
                                         Q: {stock['quantity']:,.0f}<br>
                                         CB.T: {stock['avg_cost_basis_total']:,.0f}
                                     </div>
                                     <div style="width:30%;text-align: right; display: inline">
-                                        G/L%: """ +
+                                        G/L %: """ +
                                         green_or_red_background(stock['total_gain_loss_per'], stock['total_gain_loss_per'])                                        
                                         +f"""<br>
                                         G/L: """+
-                                        green_or_red_background(stock['total_gain_loss_per'], stock['total_gain_loss'])
+                                        green_or_red_background_dec_gl_current_val(stock['total_gain_loss'], stock['total_gain_loss_per'])
                                         +f"""<br>
                                         CV: """+
-                                        green_or_red_background(stock['total_gain_loss_per'], stock['current_value'])
+                                        green_or_red_background(stock['current_value'], stock['total_gain_loss_per'])
                                         +f"""
                                     </div>
                                 </div>
@@ -423,11 +463,23 @@ def tab_operation(country_tab, country_stocks_df):
                 """
                 progress_text.markdown(progress_style, unsafe_allow_html=True)
 
-                with st.expander("Details"):
+                with st.expander(f"{stock['purchased_date'].strftime('%Y-%m-%d')} Performance"):
                     perf_tab, rec_tab=st.tabs(["Performance","Recommendation/Price Targets"])
                     with perf_tab:
-                        st.dataframe(stock['period_perf_df'])
-                        st.dataframe(stock["chart_df"])
+                        stock['period_perf_df']=stock['period_perf_df'].sort_values(by='date', ascending=True)                      
+                        styled_df = stock['period_perf_df'].style.apply(highlight_column, axis=1).format({
+                            'quantity': '{:,.0f}',
+                            'actual_cost': '{:,.0f}',
+                            'current_cost': '{:,.0f}'
+                        })
+                        st.dataframe(styled_df, hide_index=True, column_config={
+                            "quantity": None,
+                            "actual_cost": None,
+                            "actual_price": None,
+                            "date": st.column_config.DateColumn(format="yyyy-MM-DD"),                            
+                            "close": st.column_config.NumberColumn(format="%0.2f")
+                            })
+                        #st.dataframe(stock["chart_df"])
                     with rec_tab:
                         st.dataframe(stock.recommendations)
                         st.write(stock.analyst_price_targets)
